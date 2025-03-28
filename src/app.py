@@ -2,11 +2,14 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 import os
+from datetime import timedelta
 from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
 from flask_swagger import swagger
+from flask_jwt_extended import create_access_token, jwt_required, JWTManager
 from api.utils import APIException, generate_sitemap
 from api.models import db
+from api.models import User
 from api.routes import api
 from api.admin import setup_admin
 from api.commands import setup_commands
@@ -16,8 +19,15 @@ from api.commands import setup_commands
 ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
 static_file_dir = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), '../public/')
+
+
 app = Flask(__name__)
+jwt = JWTManager(app)
+#app.config['JWT_SECRET_KEY'] = os.process_env.JWT_KEY
+app.config['JWT_SECRET_KEY'] = 'secret-key'
+app.config['JWT_TOKEN_EXPIRES'] = timedelta(days=3)
 app.url_map.strict_slashes = False
+
 
 # database condiguration
 db_url = os.getenv("DATABASE_URL")
@@ -41,8 +51,30 @@ setup_commands(app)
 app.register_blueprint(api, url_prefix='/api')
 
 # Handle/serialize errors like a JSON object
+@app.route('/login', methods=["POST"])
+@jwt_required()
+def login ():
+    email = request.json.get('email')
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        return jsonify() ({
+            'mensaje': 'Usuario o password no existe'
+        }), 404
+    password = request.json.get('password')
+    if password != user.password:
+        return jsonify() ({
+            'mensaje': 'Usuario o password no existe'
+        }), 404
+    access_token = create_access_token(identity=email, additional_claims={'role':'admin'})
+    return jsonify ({
+        "acceso token": access_token
 
+    })
 
+    
+    
+           
+    
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
     return jsonify(error.to_dict()), error.status_code
@@ -70,3 +102,4 @@ def serve_any_other_file(path):
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
     app.run(host='0.0.0.0', port=PORT, debug=True)
+
